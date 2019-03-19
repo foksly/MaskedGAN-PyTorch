@@ -1,32 +1,41 @@
+import os
 import re
 from tqdm import tqdm
 import numpy as np
 
+import torch
+import torch.nn.functional as F
+from torch.utils.data import TensorDataset, DataLoader
 
-def load_imdb_data(path, seq_len=40, gen=False):
+def load_imdb_data(path='', seq_len=40, gen=True):
     """
-    Loads IMDB 50k unsupervised reviews
+    Loads IMDB 100k reviews
     
-    path: str, path to the unsupervised reviews data
+    path: str, path to the aclImdb folder
     seq_len: minimum length of sequence
     gen: if True all the reviews will be length of seq_len
+         otherwise function will return sequences of len >= seq_len
     """
     prog = re.compile('[A-Za-z0-9]+')
     
-    reviews = []
+    paths = [path+'aclImdb/test/pos', path+'aclImdb/test/neg', 
+             path+'aclImdb/train/pos', path+'aclImdb/train/neg', 
+             path+'aclImdb/train/unsup/']
     
-    for i in tqdm(range(50000)):
-        with open(path + f'{i}_0.txt', 'r') as f:
-            rev = f.read()
-        
-        rev = rev.replace(' br ', ' ')
-        if len(prog.findall(rev)) >= seq_len:
-            if gen:
-                reviews.append(['<sos>'] + prog.findall(rev)[:seq_len])
-                if len(prog.findall(rev)[:seq_len]) == 39:
-                    print(len(rev.split()))
-            else:
-                reviews.append(['<sos>'] + prog.findall(rev))
+    
+    reviews = []
+    for p in tqdm(paths):
+        files = os.listdir(p)
+        for file in tqdm(files):
+            with open(p + '/' + file, 'r') as f:
+                rev = f.read()
+
+            rev = rev.replace(' br ', ' ')
+            if len(prog.findall(rev)) >= seq_len:
+                if gen:
+                    reviews.append(['<sos>'] + prog.findall(rev)[:seq_len])
+                else:
+                    reviews.append(['<sos>'] + prog.findall(rev))
     return reviews
 
 def vocab_idxs(data):
@@ -73,3 +82,45 @@ def sents2matrix(data, word2id, seq_len=41):
     for i in tqdm(range(len(data))):
         matrix[i] = np.array([int(word2id[word]) for word in data[i]])
     return np.array(matrix)
+
+
+def prepare_imdb_data(batch_size=64, validation_size=0.15, path='', 
+                      seq_len=40, gen=True, return_data=False):
+    """
+    Prepares imdb data for further work with pytorch
+    
+    returns: train_loader, valid_loader, 
+             vocab, word2id, id2word 
+             and original reviews if return_data=True
+    -------------------------------------------------
+    
+    validation_size: size of valdation set
+    -------------------------------------------------
+    
+    for information about other parameters check the 
+    doc of the load_imdb_data function
+    -------------------------------------------------
+    """
+    
+    reviews = load_imdb_data(path='', seq_len=40, gen=True)
+    vocab, word2id, id2word = vocab_idxs(reviews)
+    matrix = sents2matrix(reviews, word2id)
+    
+    # Splitting data into train and validation
+    idx = np.random.choice(range(len(matrix)), 
+                           size=len(matrix), replace=False)
+    split = int(len(idx) * (1 - validation_size))
+    train_idx = idx[:split]
+    valid_idx = idx[split:]
+    
+    train_data = TensorDataset(torch.LongTensor(matrix[train_idx]))
+    valid_data = TensorDataset(torch.LongTensor(matrix[valid_idx]))
+    
+    # Loading data to DataLoaders
+    train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+    valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
+    print('Data has been successfully loaded')
+    if return_data:
+        return train_loader, valid_loader, vocab, word2id, id2word, reviews
+    else:
+        return train_loader, valid_loader, vocab, word2id, id2word

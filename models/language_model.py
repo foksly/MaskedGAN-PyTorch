@@ -3,6 +3,15 @@ import torch.nn as nn
 from torch import optim
 from torch.nn import functional as F
 
+import numpy as np
+from tqdm import tqdm
+
+import matplotlib.pyplot as plt
+
+import os
+from IPython.display import clear_output
+
+
 class LanguageModel(nn.Module):
     
     def __init__(self, hidden_dim, vocab_size, embedding_dim, 
@@ -87,7 +96,7 @@ def train_epoch(model, optimizer, train_loader, train_on_gpu=True):
     criterion = nn.NLLLoss()
     loss_log = []
     model.train()
-    for sequence in train_loader:
+    for sequence in tqdm(train_loader):
         optimizer.zero_grad()
         h = model.init_hidden(sequence[0].size(0))
         h = tuple([each.data for each in h])
@@ -113,13 +122,14 @@ def plot_history(train_history, title='loss'):
     plt.grid()
     plt.show()
     
-def train(model, opt, n_epochs, train_loader, train_on_gpu=True, save_to_disk=True, path='pretrained_model.pt'):
+def train(model, opt, n_epochs, train_loader, valid_loader, print_every=5, train_on_gpu=True, save_to_disk=True, path='pretrained_model.pt'):
     train_log = []
     total_steps = 0
     
     if train_on_gpu:
         model.cuda()
     for epoch in range(n_epochs):
+        print("Epoch: ", epoch)
         train_loss = train_epoch(model, opt, train_loader, train_on_gpu=train_on_gpu)
         train_log.extend(train_loss)
         total_steps += len(train_loader)
@@ -131,7 +141,9 @@ def train(model, opt, n_epochs, train_loader, train_on_gpu=True, save_to_disk=Tr
         
         if epoch % 5 == 0:
             if save_to_disk:
-                torch.save(model, path)
+                torch.save(model.state_dict(), path)
+        if epoch % print_every == 0:
+            print(np.mean(eval_epoch(eval_loader=valid_loader, eval_on_gpu=True, model=model)))
         
 def eval_model(model, eval_loader, eval_on_gpu=True):
     eval_log = []

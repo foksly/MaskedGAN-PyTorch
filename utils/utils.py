@@ -3,11 +3,30 @@ from __future__ import print_function
 from tqdm import tqdm
 import numpy as np
 import chainer
+import pickle
 import os
 import re
 import torch
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
+
+# -----------------------------------------------------
+
+def save2pkl(path, file):
+    """
+    Saves to pkl
+    """
+    with open(path, 'wb') as f:
+        pickle.dump(file, f)
+
+
+def load_pkl(path):
+    """
+    Loads pkl file
+    """
+    with open(path, 'rb') as f:
+        data = pickle.load(f)
+    return data
 
 # -----------------------------------------------------
 
@@ -32,10 +51,12 @@ def vocab_idxs(data, sos_token=True):
         word2id = {k:v for v, k in enumerate(vocab, 2)}
         word2id['<m>'] = 0
         word2id['<sos>'] = 1
+        vocab.add("<sos>")
+        vocab.add('<m>')
     else:
         word2id = {k:v for v, k in enumerate(vocab, 1)}
         word2id['<m>'] = 0
-    # vocab.add("<sos>")
+    
     id2word = {v:k for k, v in word2id.items()}
     return vocab, word2id, id2word
 
@@ -58,7 +79,7 @@ def sents2matrix(data, word2id):
     """
     
     matrix = np.zeros((len(data), len(data[0])))
-    for i in range(len(data)):
+    for i in tqdm(range(len(data))):
         matrix[i] = np.array([int(word2id[word]) for word in data[i]])
     return np.array(matrix)
 
@@ -66,8 +87,15 @@ def sents2matrix(data, word2id):
 # -----------------------------------------------------
 # IMDB
 
-def prepare_imdb_data(batch_size=64, validation_size=0.15, forward=True,
-                      path='', seq_len=40, gen=True, return_data=False):
+def prepare_imdb_data(path='data/', seq_len=40, gen=True):
+    reviews = load_imdb_data(path='data/', seq_len=40, gen=True)
+    vocab, word2id, id2word = vocab_idxs(reviews)
+    matrix = sents2matrix(reviews, word2id)
+    return matrix, vocab, word2id, id2word
+
+
+def prepare_imdb_dataloaders(path_to_pkl=None, batch_size=64, validation_size=0.15, forward=True,
+                      path='', seq_len=40, gen=True, return_data=False, random_seed=42):
     """
     Prepares imdb data for further work with pytorch
     
@@ -83,14 +111,18 @@ def prepare_imdb_data(batch_size=64, validation_size=0.15, forward=True,
     doc of the load_imdb_data function
     -------------------------------------------------
     """
-    
-    reviews = load_imdb_data(path='data/', seq_len=40, gen=True)
-    vocab, word2id, id2word = vocab_idxs(reviews)
-    matrix = sents2matrix(reviews, word2id)
+    if path_to_pkl:
+        matrix, vocab, word2id, id2word = load_pkl(path_to_pkl)
+    else:
+        reviews = load_imdb_data(path='data/', seq_len=40, gen=True)
+        vocab, word2id, id2word = vocab_idxs(reviews)
+        matrix = sents2matrix(reviews, word2id)
+        save2pkl('data/matrix.pkl', matrix)
     if not forward:
         matrix = matrix[:, ::-1]
     
     # Splitting data into train and validation
+    np.random.seed(random_seed)
     idx = np.random.choice(range(len(matrix)), 
                            size=len(matrix), replace=False)
     split = int(len(idx) * (1 - validation_size))
@@ -127,7 +159,7 @@ def load_imdb_data(path='', seq_len=40, gen=True):
     
     
     reviews = []
-    for p in paths:
+    for p in tqdm(paths):
         files = os.listdir(p)
         for file in files:
             with open(p + '/' + file, 'r') as f:

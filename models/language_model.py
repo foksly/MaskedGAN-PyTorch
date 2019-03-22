@@ -122,7 +122,8 @@ def plot_history(train_history, title='loss'):
     plt.grid()
     plt.show()
     
-def train(model, opt, n_epochs, train_loader, valid_loader, print_every=5, train_on_gpu=True, save_to_disk=True, path='pretrained_model.pt'):
+def train(model, opt, n_epochs, train_loader, valid_loader, save_every=1, perplexity_break=106,
+          print_every=5, train_on_gpu=True, save_to_disk=True, path='pretrained_model.pt'):
     train_log = []
     total_steps = 0
     
@@ -134,16 +135,22 @@ def train(model, opt, n_epochs, train_loader, valid_loader, print_every=5, train
         train_log.extend(train_loss)
         total_steps += len(train_loader)
         
+        perplexity = 2**np.mean(eval_epoch(eval_loader=valid_loader, eval_on_gpu=True, model=model))
+        
+        if perplexity > perplexity_break:
+            print('Desired perplexity has been successfully achieved!')
+            break
+        
         clear_output()
         print ('Epoch [{}/{}], Loss: {:.4f}' 
                 .format(epoch+1, n_epochs, np.mean(train_log[-100:])))
+        print('Validation perplexity: ', perplexity)
         plot_history(train_log)
         
-        if epoch % 5 == 0:
+        if epoch % save_every == 0:
             if save_to_disk:
                 torch.save(model.state_dict(), path)
-        if epoch % print_every == 0:
-            print(np.mean(eval_epoch(eval_loader=valid_loader, eval_on_gpu=True, model=model)))
+            
         
 def eval_model(model, eval_loader, eval_on_gpu=True):
     eval_log = []

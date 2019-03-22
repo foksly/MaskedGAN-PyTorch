@@ -15,19 +15,21 @@ from IPython.display import clear_output
 class LanguageModel(nn.Module):
     
     def __init__(self, hidden_dim, vocab_size, embedding_dim, 
-                 linear_dim=128, n_layers=3, train_on_gpu=True):
+                 linear_dim=128, n_layers=3, train_on_gpu=True, bidirectional=False):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
         self.n_layers = n_layers
         self.train_on_gpu = train_on_gpu
+        self.bidirectional = bidirectional
         
         # Embeddings
         self.embeddings = nn.Embedding(vocab_size, embedding_dim=embedding_dim)
         
         # LSTM
         dropout = 1 if n_layers > 1 else 0
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, batch_first=True, dropout=dropout)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, 
+                            batch_first=True, dropout=dropout, bidirectional=bidirectional)
         
         # fully-connected layes
         self.fc = nn.Sequential(
@@ -60,11 +62,11 @@ class LanguageModel(nn.Module):
         weight = next(self.parameters()).data
         
         if (self.train_on_gpu):
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda(),
-                  weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda())
+            hidden = (weight.new(self.n_layers*(self.bidirectional + 1), batch_size, self.hidden_dim).zero_().cuda(),
+                  weight.new(self.n_layers*(self.bidirectional + 1), batch_size, self.hidden_dim).zero_().cuda())
         else:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_(),
-                      weight.new(self.n_layers, batch_size, self.hidden_dim).zero_())
+            hidden = (weight.new(self.n_layers*(self.bidirectional + 1), batch_size, self.hidden_dim).zero_(),
+                      weight.new(self.n_layers*(self.bidirectional + 1), batch_size, self.hidden_dim).zero_())
         
         return hidden
 

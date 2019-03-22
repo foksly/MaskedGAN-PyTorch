@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
+import matplotlib.pyplot as plt
 
 
 class MaskedEncoderRNN(nn.Module):
@@ -49,6 +50,7 @@ class MaskedEncoderRNN(nn.Module):
     
     def generate_mask(self, size):
         mask = np.random.choice(2, size, p=[1-self.p, self.p])
+        mask[:, 0] = np.ones(size[0])
         if self.train_on_gpu:
             return torch.from_numpy(mask).long().cuda()
         else:
@@ -82,8 +84,6 @@ class AttnMaskedDecoderRNN(nn.Module):
         self.max_length = max_length
         
         self.embedding = nn.Embedding(self.vocab_size, embedding_dim)
-        # self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
-        # self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.attention = Attention(hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
         self.lstm = nn.LSTM(embedding_dim, self.hidden_size, n_layers, batch_first=True)
@@ -94,27 +94,10 @@ class AttnMaskedDecoderRNN(nn.Module):
     def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input)
         embedded = self.dropout(embedded)
-        #print(embedded.shape)
-        #print(hidden[0].transpose(0,1).shape)
-        #attn_weights = F.softmax(
-        #    self.attn(torch.cat((embedded, hidden[0].transpose(0,1)), 2)), dim=2)
-        #attn_applied = torch.bmm(attn_weights, encoder_outputs)
-        #output = torch.cat((embedded, attn_applied), 2)
-        #output = self.attn_combine(output)
-        # output = F.relu(output)
-        #print('hid shape: ', hidden[0].shape)
-        #print('enc_out shape: ', encoder_outputs.shape)
         context, attn_weights = self.attention(hidden[0].view(input.size(0), 1, -1), encoder_outputs)
-        #print('truoble: ', input.shape, hidden[0].shape, hidden[1].shape)
         output, hidden = self.lstm(embedded, hidden)
-        #print(output.shape)
         output = torch.cat((output, context), dim=2)
-        #print(context.shape)
-        #print('BEFORE SM: ', self.prediction(output))
         output = F.log_softmax(self.prediction(output), dim=2)
-        print('AFTER: ', output)
-        #print(output.shape)
-        # output = self.out(output), dim=1)
         return output, hidden, attn_weights
 
     def init_hidden(self, batch_size):
